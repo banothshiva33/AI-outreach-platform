@@ -174,3 +174,6 @@ def test_discovery_engine_with_mock_search(
     assert state.keywords_processed >= 1
     leads = lead_repository.search_leads(db, query="InnovateTech")
     assert len(leads) >= 1
+    names = {lead.name for lead in leads}
+    assert "InnovateTech Solutions Pvt Ltd" in names
+    assert "InnovateTech Solutions Pvt Ltd InnovateTech" not in names

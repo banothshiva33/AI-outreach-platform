@@ -309,6 +309,29 @@ def test_validator_rejects_junk():
     ) is True
 
 
+def test_heuristic_extractor_stops_company_name_at_legal_suffix():
+    from app.discovery.ai_extractor import AIExtractionAgent
+    from app.discovery.article_engine import ArticleDocument
+
+    document = ArticleDocument(
+        url="https://innovatetech.co.in",
+        title="InnovateTech Solutions Pvt Ltd",
+        html="",
+        body_html="",
+        body_text=(
+            "InnovateTech Solutions Pvt Ltd InnovateTech is an AI startup based in "
+            "Bangalore. InnovateTech Solutions Pvt Ltd InnovateTech is an AI startup "
+            "based in Bangalore."
+        ),
+    )
+
+    mentions = AIExtractionAgent()._heuristic_mentions(document)
+    names = [mention.company_name for mention in mentions]
+
+    assert "InnovateTech Solutions Pvt Ltd" in names
+    assert "InnovateTech Solutions Pvt Ltd InnovateTech" not in names
+
+
 @patch("app.discovery.website_parser.fetch_url")
 @patch("app.discovery.website_enrichment.fetch_page_html")
 @patch("app.discovery.article_engine.fetch_page_html")

@@ -17,6 +17,11 @@ TITLE_RE = re.compile(
     re.I,
 )
 
+LEGAL_SUFFIX_RE = re.compile(
+    r"^(.+?\b(?:Pvt\.?\s*Ltd\.?|Private Limited|LLP|Inc\.?|Corp\.?))\b",
+    re.I,
+)
+
 
 class AIExtractionAgent:
     """Uses an LLM first, then deterministic extraction, to turn article text into startup mentions."""
@@ -40,9 +45,12 @@ class AIExtractionAgent:
                     "article_url": document.url,
                     "article_title": document.title,
                     "article_body_length": len(document.body_text),
+                    "raw_article_text": document.body_text,
                     "llm_prompt": self._build_prompt(),
                     "llm_article_text": document.body_text[:18000],
                     "llm_request_size": len(document.body_text[:18000]),
+                    "exact_llm_input": getattr(self, "_last_llm_input", None),
+                    "llm_error": getattr(self, "_last_llm_error", None),
                     "raw_llm_response": getattr(self, "_last_raw_llm_response", None),
                     "parsed_json": [self._mention_to_trace_payload(mention) for mention in raw_mentions],
                     "parsed_companies": [
@@ -82,6 +90,9 @@ class AIExtractionAgent:
 
     def _extract_with_llm(self, document: ArticleDocument) -> List[StartupMention]:
         if not settings.OPENAI_API_KEY:
+            self._last_llm_input = None
+            self._last_raw_llm_response = None
+            self._last_llm_error = "OPENAI_API_KEY is not configured"
             return []
 
         prompt = self._build_prompt()
@@ -89,22 +100,31 @@ class AIExtractionAgent:
             "url": document.url,
             "article_text": document.body_text[:18000],
         }
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": json.dumps(user_content, ensure_ascii=False)},
+        ]
+        self._last_llm_input = {
+            "model": self.model,
+            "temperature": 0,
+            "messages": messages,
+        }
+        self._last_raw_llm_response = None
+        self._last_llm_error = None
 
         try:
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model=self.model,
                 temperature=0,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": json.dumps(user_content, ensure_ascii=False)},
-                ],
+                messages=messages,
             )
             content = response.choices[0].message.content or "{}"
             self._last_raw_llm_response = content
             payload = self._parse_json(content)
             return [self._mention_from_payload(item, document.url, document.body_text) for item in payload]
         except Exception as exc:
+            self._last_llm_error = str(exc)
             logger.debug("LLM extraction failed for %s: %s", document.url, exc)
             return []
 
@@ -260,6 +280,9 @@ class AIExtractionAgent:
 
     def _normalize_candidate(self, candidate: str) -> str:
         candidate = re.sub(r"\s+", " ", candidate).strip(" ,;:.-")
+        legal_suffix_match = LEGAL_SUFFIX_RE.match(candidate)
+        if legal_suffix_match:
+            candidate = legal_suffix_match.group(1)
         candidate = candidate.replace("  ", " ")
         return candidate
 

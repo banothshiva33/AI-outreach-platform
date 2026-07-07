@@ -153,6 +153,7 @@ class DiscoveryEngine:
                     "validation",
                     outcome="rejected_extracted",
                     company_name=company.name,
+                    extracted_company=self._extracted_trace(company),
                     reasons=extracted_reasons,
                     source_url=company.source_url,
                     occurrence_count=company.occurrence_count,
@@ -165,6 +166,7 @@ class DiscoveryEngine:
                 "validation",
                 outcome="accepted_extracted",
                 company_name=company.name,
+                extracted_company=self._extracted_trace(company),
                 source_url=company.source_url,
                 website=company.website,
                 occurrence_count=company.occurrence_count,
@@ -192,6 +194,7 @@ class DiscoveryEngine:
                     "validation",
                     outcome="rejected_enriched",
                     company_name=enriched.name,
+                    enriched_lead=self._enriched_trace(enriched),
                     reasons=enriched_reasons,
                     website=enriched.website,
                     website_intro=enriched.website_intro,
@@ -203,6 +206,7 @@ class DiscoveryEngine:
                 "validation",
                 outcome="accepted_enriched",
                 company_name=enriched.name,
+                enriched_lead=self._enriched_trace(enriched),
                 website=enriched.website,
                 lead_score=enriched.lead_score,
                 confidence_score=enriched.confidence_score,
@@ -291,6 +295,25 @@ class DiscoveryEngine:
         return urls[: max(limit * 3, limit)]
 
     def _persist_lead(self, lead: EnrichedLead) -> None:
+        persistence_payload = {
+            "company_data": {
+                "name": lead.name,
+                "website": lead.website,
+                "description": lead.description,
+                "country": lead.country,
+                "state": lead.state,
+                "city": lead.city,
+                "company_size": lead.company_size,
+                "funding_stage": lead.funding_stage,
+                "lead_score": lead.lead_score,
+                "confidence_score": lead.confidence_score,
+            },
+            "categories": lead.categories,
+            "contacts": lead.contacts,
+            "social_links": lead.social_links,
+            "profiles": lead.profiles,
+            "sources": lead.sources,
+        }
         self._trace(
             "persistence",
             event="saving_company",
@@ -306,26 +329,16 @@ class DiscoveryEngine:
                 "lead_score": lead.lead_score,
                 "confidence_score": lead.confidence_score,
             },
+            repository_payload=persistence_payload,
         )
         saved_company = lead_repository.create_or_update_lead(
             self.db,
-            company_data={
-                "name": lead.name,
-                "website": lead.website,
-                "description": lead.description,
-                "country": lead.country,
-                "state": lead.state,
-                "city": lead.city,
-                "company_size": lead.company_size,
-                "funding_stage": lead.funding_stage,
-                "lead_score": lead.lead_score,
-                "confidence_score": lead.confidence_score,
-            },
-            categories=lead.categories,
-            contacts=lead.contacts,
-            social_links=lead.social_links,
-            profiles=lead.profiles,
-            sources=lead.sources,
+            company_data=persistence_payload["company_data"],
+            categories=persistence_payload["categories"],
+            contacts=persistence_payload["contacts"],
+            social_links=persistence_payload["social_links"],
+            profiles=persistence_payload["profiles"],
+            sources=persistence_payload["sources"],
             commit=True,
         )
         self._trace(
@@ -355,6 +368,54 @@ class DiscoveryEngine:
             "discovery.export",
             f"Exports created: {excel_name}, {csv_name} ({count} leads)",
         )
+
+    def _extracted_trace(self, company: ExtractedCompany) -> dict:
+        return {
+            "name": company.name,
+            "website": company.website,
+            "description": company.description,
+            "article_context": company.article_context,
+            "occurrence_count": company.occurrence_count,
+            "entity_type": company.entity_type,
+            "founder": company.founder,
+            "industry": company.industry,
+            "email": company.email,
+            "phone": company.phone,
+            "location": company.location,
+            "country": company.country,
+            "funding": company.funding,
+            "employee_size": company.employee_size,
+            "confidence": company.confidence,
+            "source_url": company.source_url,
+            "source_urls": company.source_urls,
+            "strategy": company.strategy,
+            "tags": company.tags,
+            "social_links": company.social_links,
+        }
+
+    def _enriched_trace(self, lead: EnrichedLead) -> dict:
+        return {
+            "name": lead.name,
+            "website": lead.website,
+            "description": lead.description,
+            "article_context": lead.article_context,
+            "website_intro": lead.website_intro,
+            "llm_confidence": lead.llm_confidence,
+            "founder": lead.founder,
+            "industry": lead.industry,
+            "country": lead.country,
+            "state": lead.state,
+            "city": lead.city,
+            "funding_stage": lead.funding_stage,
+            "company_size": lead.company_size,
+            "categories": lead.categories,
+            "contacts": lead.contacts,
+            "social_links": lead.social_links,
+            "profiles": lead.profiles,
+            "sources": lead.sources,
+            "lead_score": lead.lead_score,
+            "confidence_score": lead.confidence_score,
+        }
 
     def _trace(self, stage: str, **payload) -> None:
         trace = {"stage": stage, **payload}
